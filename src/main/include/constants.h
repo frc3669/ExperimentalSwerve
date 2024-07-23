@@ -13,7 +13,7 @@ namespace constants {
     // how often to run the robot program
     const units::second_t cycle_time = 10_ms;
     // maximum module current
-    const double max_current = 25;
+    const double max_current = 15;
     // current required to account for friction
     const double feedforward_current = 4;
     // current headroom

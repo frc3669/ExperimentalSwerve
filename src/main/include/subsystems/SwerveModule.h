@@ -25,14 +25,17 @@ public:
 
     void init() {
         m_drive->SetNeutralMode(signals::NeutralModeValue::Brake);
-        configs::TalonFXConfiguration configs{};
+        configs::TalonFXConfiguration drive_configs{};
 		/* Torque-based velocity does not require a feed forward, as torque will accelerate the rotor up to the desired velocity by itself */
-		configs.Slot0.kP = 5; // An error of 1 rotation per second results in 5 amps output
-		configs.Slot0.kS = feedforward_current;
-        configs.TorqueCurrent.PeakForwardTorqueCurrent = max_current;
-		configs.TorqueCurrent.PeakReverseTorqueCurrent = -max_current;
-        m_drive->GetConfigurator().Apply(configs, 50_ms);
-        m_steering->GetConfigurator().Apply(configs, 50_ms);
+		drive_configs.Slot0.kP = 5; // An error of 1 rotation per second results in 5 amps output
+		drive_configs.Slot0.kS = feedforward_current;
+        drive_configs.TorqueCurrent.PeakForwardTorqueCurrent = max_current;
+		drive_configs.TorqueCurrent.PeakReverseTorqueCurrent = -max_current;
+        m_drive->GetConfigurator().Apply(drive_configs, 50_ms);
+        configs::TalonFXConfiguration steering_configs{};
+        steering_configs.CurrentLimits.SupplyCurrentLimitEnable = true;
+        steering_configs.CurrentLimits.SupplyCurrentLimit = 30;
+        m_steering->GetConfigurator().Apply(steering_configs, 50_ms);
         m_drive->GetPosition().SetUpdateFrequency(100_Hz);
         m_drive->GetVelocity().SetUpdateFrequency(100_Hz);
         encoder->GetAbsolutePosition().SetUpdateFrequency(100_Hz);
@@ -60,6 +63,28 @@ public:
         frc::SmartDashboard::PutNumber("setpoint speed" + to_string(modID), abs(wheel_speed*motor_turns_per_m));
         frc::SmartDashboard::PutNumber("actual speed" + to_string(modID), GetSpeed());
         frc::SmartDashboard::PutNumber("current in amps" + to_string(modID), abs(m_drive->GetClosedLoopOutput().GetValueAsDouble()));
+    }
+
+    void SetAcceleration(complex<double> robot_accel = complex<double>(0,0), double angular_accel = 0){
+        complex<double> accel_current = FindModuleVector(robot_accel, angular_accel);
+        double wheel_accel = abs(accel_current);
+        angle = encoder->GetAbsolutePosition().GetValueAsDouble()*tau;
+        double error = arg(accel_current) - angle;
+        mf::wrap(error);
+        if (wheel_accel < 0.008) {
+            error = 0;
+        }
+        if (abs(error) > M_PI/2){
+            error += M_PI;
+            mf::wrap(error);
+            wheel_accel *= -1;
+        }
+        m_steering->Set(error/M_PI);
+        m_drive->SetControl(torque_ctrl.WithOutput(wheel_accel*max_current*1_A));
+        frc::SmartDashboard::PutNumber("speed" + to_string(modID), GetSpeed());
+        frc::SmartDashboard::PutNumber("torque current" + to_string(modID), abs(m_drive->GetTorqueCurrent().GetValueAsDouble()));
+        frc::SmartDashboard::PutNumber("drive motor supply current" + to_string(modID), abs(m_drive->GetSupplyCurrent().GetValueAsDouble()));
+        frc::SmartDashboard::PutNumber("drive motor supply voltage" + to_string(modID), abs(m_drive->GetSupplyVoltage().GetValueAsDouble()));
     }
 
     complex<double> FindModuleVector(complex<double> robot_vector, double angular_rate) {
@@ -105,6 +130,7 @@ private:
     hardware::TalonFX *m_steering;
     hardware::CANcoder *encoder;
 	controls::VelocityTorqueCurrentFOC velocity_ctrl = controls::VelocityTorqueCurrentFOC{0_tps, 0_tr_per_s_sq, 0_A, 0, false}.WithSlot(0);
+	controls::TorqueCurrentFOC torque_ctrl = controls::TorqueCurrentFOC{0_A};
     int modID;
     complex<double> turn_vector;
     double angle;

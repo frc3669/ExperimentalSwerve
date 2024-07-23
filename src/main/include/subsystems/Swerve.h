@@ -49,7 +49,6 @@ public:
         }
         // find velocity increments
         complex<double> vel_increment = vel_error/highest;
-        complex<double> robot_vel_increment = robot_vel_error/highest;
         double angular_vel_increment = angular_vel_error/highest;
         // increment velocity
         if (abs(vel_error) > max_m_per_sec_per_cycle) {
@@ -70,7 +69,17 @@ public:
     }
 
     void SetAcceleration(double x_accel, double y_accel, double angular_accel) {
-        
+        complex<double> accel = complex<double>(x_accel, y_accel);
+        // apply smooth deadband
+        double dB = 0.1;
+        accel = (abs(accel)>dB) ? accel*(1 - dB/abs(accel))/(1-dB) : 0;
+        angular_accel = (abs(angular_accel)>dB) ? angular_accel*(1 - dB/abs(angular_accel))/(1-dB) : 0;
+        // find the robot oriented accel
+        heading = gyro.GetYaw().GetValueAsDouble()*tau/360;
+        complex<double> robot_accel = accel * polar<double>(1, -heading);
+        for (auto& module : modules) {
+            module.SetAcceleration(robot_accel, angular_accel);
+        }
     }
 
     // sets the trajectory to follow
